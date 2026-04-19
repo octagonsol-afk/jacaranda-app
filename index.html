@@ -956,94 +956,161 @@ body.print-content .rcard-ai{display:none!important}
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script>
-(function(){
-  const FB_CFG = {
-    apiKey:            "AIzaSyBhwU_5eLGRGeglD_tPeldUvXdn4krTUCo",
-    authDomain:        "jacaranda-cafe-emotional.firebaseapp.com",
-    databaseURL:       "https://jacaranda-cafe-emotional-default-rtdb.asia-southeast1.firebasedatabase.app",
-    projectId:         "jacaranda-cafe-emotional",
-    storageBucket:     "jacaranda-cafe-emotional.firebasestorage.app",
-    messagingSenderId: "531023678576",
-    appId:             "1:531023678576:web:881c0346498f68bda678b5"
-  };
+// ── Firebase 초기화 (전역) ────────────────────────────────
+var FB_CFG = {
+  apiKey:            "AIzaSyBhwU_5eLGRGeglD_tPeldUvXdn4krTUCo",
+  authDomain:        "jacaranda-cafe-emotional.firebaseapp.com",
+  databaseURL:       "https://jacaranda-cafe-emotional-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId:         "jacaranda-cafe-emotional",
+  storageBucket:     "jacaranda-cafe-emotional.firebasestorage.app",
+  messagingSenderId: "531023678576",
+  appId:             "1:531023678576:web:881c0346498f68bda678b5"
+};
 
-  let db;
+var fbDB   = null;
+var fbAuth = null;
+
+function fbInit(){
   try {
+    if(typeof firebase === 'undefined') {
+      console.warn('[FB] firebase 객체 없음 — CDN 로드 실패');
+      return false;
+    }
     if(!firebase.apps.length) firebase.initializeApp(FB_CFG);
-    db = firebase.database();
+    fbDB   = firebase.database();
+    fbAuth = firebase.auth();
     console.log('[FB] 초기화 완료');
-    window._fbReady = true;
-  } catch(e){ console.warn('[FB] 초기화 실패:', e.message); }
 
-  const PATH = 'jacaranda/customers';
+    // 인증 상태 감지
+    fbAuth.onAuthStateChanged(function(user){
+      window.fbCurrentUser = user;
+      var ind = document.getElementById('fb-sync-indicator');
+      if(user){
+        if(ind) ind.textContent = '☁ ' + user.email;
+      } else {
+        if(ind) ind.textContent = '';
+      }
+    });
+    return true;
+  } catch(e){
+    console.warn('[FB] 초기화 실패:', e.message);
+    return false;
+  }
+}
 
-  // 전체 저장
-  window.fbSaveAll = async function(){
-    if(!db) return false;
-    try {
-      const custs = JSON.parse(localStorage.getItem('cust_v36')||'[]');
-      const map = {};
-      custs.forEach(cu => { map['c_'+cu.id] = cu; });
-      await db.ref(PATH).set(map);
-      console.log('[FB] 전체 저장:', custs.length, '명');
-      return true;
-    } catch(e){ console.warn('[FB] 저장 실패:', e.message); return false; }
-  };
-
-  // Firebase → localStorage 병합 복원
-  window.fbLoadAll = async function(){
-    if(!db) return false;
-    try {
-      const snap = await db.ref(PATH).get();
-      if(!snap.exists()) return false;
-      const map   = snap.val();
-      const custs = Object.values(map).filter(Boolean);
-      const local = JSON.parse(localStorage.getItem('cust_v36')||'[]');
-      const merged = [...local];
-      custs.forEach(nc => {
-        if(!nc || !nc.id) return;
-        const idx = merged.findIndex(ec =>
-          ec.phone && nc.phone &&
-          ec.phone.replace(/[^0-9]/g,'') === nc.phone.replace(/[^0-9]/g,'') &&
-          ec.name === nc.name
-        );
-        if(idx >= 0){
-          const visits = merged[idx].visits||[];
-          (nc.visits||[]).forEach(nv => {
-            if(!visits.find(ev => ev.date === nv.date)) visits.push(nv);
-          });
-          merged[idx] = Object.assign({}, merged[idx], nc, {visits});
-        } else {
-          merged.push(nc);
-        }
+// 로그인
+function fbSignIn(email, pw){
+  return new Promise(function(resolve){
+    if(!fbAuth){ resolve({ok:false, msg:'Firebase 초기화 안됨'}); return; }
+    fbAuth.signInWithEmailAndPassword(email, pw)
+      .then(function(){ resolve({ok:true}); })
+      .catch(function(e){
+        var msg = {
+          'auth/user-not-found':     '등록된 이메일이 없습니다',
+          'auth/wrong-password':     '비밀번호가 틀렸습니다',
+          'auth/invalid-email':      '이메일 형식이 올바르지 않습니다',
+          'auth/invalid-credential': '이메일 또는 비밀번호를 확인해 주세요',
+          'auth/too-many-requests':  '잠시 후 다시 시도해 주세요'
+        }[e.code] || e.message;
+        resolve({ok:false, msg:msg});
       });
-      localStorage.setItem('cust_v36', JSON.stringify(merged));
-      console.log('[FB] 복원:', merged.length, '명');
-      return true;
-    } catch(e){ console.warn('[FB] 복원 실패:', e.message); return false; }
-  };
+  });
+}
 
-  // 단일 고객 저장
-  window.fbSaveCust = async function(cu){
-    if(!db || !cu || !cu.id) return;
-    try {
-      await db.ref(PATH+'/c_'+cu.id).set(cu);
-      console.log('[FB] 고객 저장:', cu.name);
-    } catch(e){ console.warn('[FB] 고객 저장 실패:', e.message); }
-  };
+// 로그아웃
+function fbSignOut(){
+  if(fbAuth) fbAuth.signOut().then(function(){ toast('로그아웃 됐습니다'); });
+}
 
-  // 자동 동기화 (앱 시작 시)
-  window.fbAutoSync = async function(){
-    const ind = document.getElementById('fb-sync-indicator');
-    if(ind) ind.textContent = '⟳ 동기화 중...';
-    const ok = await window.fbLoadAll();
-    if(ind) ind.textContent = ok ? '☁ 동기화됨' : '';
-    if(ok && typeof loadAdmStats === 'function') loadAdmStats();
-  };
+// 전체 저장
+function fbSaveAll(){
+  return new Promise(function(resolve){
+    var user = fbAuth && fbAuth.currentUser;
+    if(!fbDB || !user){ resolve(false); return; }
+    var custs = JSON.parse(localStorage.getItem('cust_v37')||'[]');
+    var map = {};
+    custs.forEach(function(cu){ map['c_'+cu.id] = cu; });
+    fbDB.ref('jacaranda/customers').set(map)
+      .then(function(){ console.log('[FB] 저장 완료:', custs.length, '명'); resolve(true); })
+      .catch(function(e){ console.warn('[FB] 저장 실패:', e.message); resolve(false); });
+  });
+}
 
-  // 자동 동기화 제거 — 로그인 후에만 수동 실행
-  // (로그인 전 Permission denied 방지)
-})();
+// Firebase → localStorage 복원
+function fbLoadAll(){
+  return new Promise(function(resolve){
+    var user = fbAuth && fbAuth.currentUser;
+    if(!fbDB || !user){ console.warn('[FB] 로그인 필요'); resolve(false); return; }
+    fbDB.ref('jacaranda/customers').get()
+      .then(function(snap){
+        if(!snap.exists()){ resolve(false); return; }
+        var custs  = Object.values(snap.val()).filter(Boolean);
+        var local  = JSON.parse(localStorage.getItem('cust_v37')||'[]');
+        var merged = local.slice();
+        custs.forEach(function(nc){
+          if(!nc||!nc.id) return;
+          var idx = merged.findIndex(function(ec){
+            return ec.phone && nc.phone &&
+              ec.phone.replace(/[^0-9]/g,'') === nc.phone.replace(/[^0-9]/g,'') &&
+              ec.name === nc.name;
+          });
+          if(idx>=0){
+            var visits = merged[idx].visits||[];
+            (nc.visits||[]).forEach(function(nv){
+              if(!visits.find(function(ev){ return ev.date===nv.date; })) visits.push(nv);
+            });
+            merged[idx] = Object.assign({}, merged[idx], nc, {visits:visits});
+          } else {
+            merged.push(nc);
+          }
+        });
+        localStorage.setItem('cust_v37', JSON.stringify(merged));
+        console.log('[FB] 복원 완료:', merged.length, '명');
+        resolve(true);
+      })
+      .catch(function(e){ console.warn('[FB] 복원 실패:', e.message); resolve(false); });
+  });
+}
+
+// 단일 고객 저장
+function fbSaveCust(cu){
+  var user = fbAuth && fbAuth.currentUser;
+  if(!fbDB || !user || !cu || !cu.id) return;
+  fbDB.ref('jacaranda/customers/c_'+cu.id).set(cu)
+    .then(function(){ console.log('[FB] 고객 저장:', cu.name); })
+    .catch(function(e){ console.warn('[FB] 고객 저장 실패:', e.message); });
+}
+
+// 수동 동기화
+function fbManualSync(){
+  var ind = document.getElementById('fb-sync-indicator');
+  if(ind) ind.textContent = '⟳ 동기화 중...';
+  toast('☁ 동기화 중...');
+  fbLoadAll().then(function(ok){
+    if(ok){
+      toast('☁ 동기화 완료');
+      if(ind) ind.textContent = '☁ 동기화됨';
+      if(typeof admSearch==='function') admSearch();
+      if(typeof loadAdmStats==='function') loadAdmStats();
+    } else {
+      toast('⚠ 동기화 실패 — 로그인 상태를 확인해 주세요');
+      if(ind) ind.textContent = '';
+    }
+  });
+}
+
+// 로그아웃 (관리자)
+function fbAdmLogout(){
+  fbSignOut();
+  if(typeof GB==='function') GB();
+}
+
+// 페이지 로드 후 Firebase 초기화
+window.addEventListener('load', function(){
+  setTimeout(function(){
+    fbInit();
+  }, 500);
+});
 </script>
 </head>
 <body>
@@ -1795,7 +1862,7 @@ function getCalliTxt(c1,c2,c3){
 /* ── 저장 & 내보내기 ── */
 function saveRec(p){
   try{
-    const arr=JSON.parse(localStorage.getItem('jaca_v36')||'[]');
+    const arr=JSON.parse(localStorage.getItem('jaca_v37')||'[]');
     const rec={
       id: Date.now(),
       date: new Date().toISOString(),
@@ -1822,7 +1889,7 @@ function saveRec(p){
     };
     // 기존 고객이면 visits에 추가, 신규면 생성
     const phone = p.phone.replace(/[^0-9]/g,'');
-    const custKey = 'cust_v36';
+    const custKey = 'cust_v37';
     const custs = JSON.parse(localStorage.getItem(custKey)||'[]');
     const existIdx = custs.findIndex(c=>c.phone.replace(/[^0-9]/g,'')=== phone && c.name===p.name);
     if(existIdx>=0){
@@ -1848,10 +1915,10 @@ function saveRec(p){
     // 기존 단순 레코드도 유지
     arr.unshift(rec);
     if(arr.length>500) arr.splice(500);
-    localStorage.setItem('jaca_v36',JSON.stringify(arr));
+    localStorage.setItem('jaca_v37',JSON.stringify(arr));
     // Firebase 동기화
     const savedCust = custs.find(cu => cu.phone && cu.phone.replace(/[^0-9]/g,'') === p.phone.replace(/[^0-9]/g,'') && cu.name === p.name);
-    if(savedCust && window.fbSaveCust) window.fbSaveCust(savedCust);
+    if(savedCust && fbSaveCust) fbSaveCust(savedCust);
   }catch(e){ console.warn('saveRec error',e); }
 }
 function exportAll(){
@@ -3131,7 +3198,7 @@ function denyConsent(){
    관리자 모드 JS
 ══════════════════════════════════ */
 const ADM_PW_KEY = 'jaca_adm_pw';
-const CUST_KEY   = 'cust_v36';
+const CUST_KEY   = 'cust_v37';
 
 
 // ── 백업 / 복원 ──────────────────────────
@@ -3144,7 +3211,7 @@ function backupData(){
     + String(now.getMinutes()).padStart(2,'0');
 
   const payload = {
-    version: 'jaca_v36',
+    version: 'jaca_v37',
     exported_at: now.toISOString(),
     customers: JSON.parse(localStorage.getItem(CUST_KEY)||'[]'),
     settings: { adm_pw: localStorage.getItem(ADM_PW_KEY)||'1234' }
@@ -3159,7 +3226,7 @@ function backupData(){
   document.body.removeChild(a);
   toast('✅ 백업 완료 — 고객 '+payload.customers.length+'명');
   // Firebase에도 동시 저장
-  if(window.fbSaveAll) window.fbSaveAll().then(ok => {
+  if(fbSaveAll) fbSaveAll().then(ok => {
     if(ok) toast('☁ Firebase 저장 완료');
   });
 }
@@ -3198,7 +3265,7 @@ function restoreData(){
         const added = merged.length - existing.length;
         toast('✅ 복원 완료 — 총 '+merged.length+'명 (신규 '+added+'명 추가)');
         // Firebase에도 업로드
-        if(window.fbSaveAll) window.fbSaveAll();
+        if(fbSaveAll) fbSaveAll();
         if(typeof admSearch==='function') admSearch();
         if(typeof loadAdmStats==='function') loadAdmStats();
       } catch(err){ toast('❌ 파일 오류: '+err.message); }
@@ -3227,8 +3294,8 @@ function fbManualSync(){
   const ind = document.getElementById('fb-sync-indicator');
   if(ind) ind.textContent = '⟳ 동기화 중...';
   toast('☁ Firebase 동기화 중...');
-  if(window.fbLoadAll){
-    window.fbLoadAll().then(ok => {
+  if(fbLoadAll){
+    fbLoadAll().then(ok => {
       if(ok){
         toast('☁ Firebase 동기화 완료');
         if(ind) ind.textContent = '☁ 동기화됨';
@@ -3260,22 +3327,22 @@ async function fbLoginSubmit(){
   errEl.textContent = '로그인 중...';
 
   // fbSignIn 로드 대기 (최대 8초)
-  if(!window.fbSignIn){
+  if(typeof fbSignIn==="undefined"){
     let waited = 0;
     await new Promise(resolve => {
       const t = setInterval(()=>{
         waited += 200;
-        if(window.fbSignIn || waited >= 8000){
+        if(fbSignIn || waited >= 8000){
           clearInterval(t); resolve();
         }
       }, 200);
     });
   }
-  if(!window.fbSignIn){
+  if(typeof fbSignIn==="undefined"){
     errEl.textContent = '❌ Firebase 연결 실패 — 인터넷 연결을 확인해 주세요';
     return;
   }
-  const result = await window.fbSignIn(email, pw);
+  const result = await fbSignIn(email, pw);
   if(result.ok){
     errEl.textContent = '';
     pinClose();
@@ -3283,7 +3350,7 @@ async function fbLoginSubmit(){
     toast('☁ 로그인 완료 — 동기화 중...');
     // 인증 완료 후 1초 대기 후 동기화
     setTimeout(function(){
-      if(window.fbLoadAll) window.fbLoadAll().then(ok=>{
+      if(fbLoadAll) fbLoadAll().then(ok=>{
         if(ok){ admSearch(); loadAdmStats(); toast('☁ 동기화 완료'); }
         else { toast('⚠ 동기화 실패 — 로컬 데이터 사용'); }
       });
