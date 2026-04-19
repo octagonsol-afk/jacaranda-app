@@ -1001,7 +1001,11 @@ function fbInit(){
 // 로그인
 function fbSignIn(email, pw){
   return new Promise(function(resolve){
-    if(!fbAuth){ resolve({ok:false, msg:'Firebase 초기화 안됨'}); return; }
+    if(!fbAuth){
+    // fbInit 재시도
+    fbInit();
+    if(!fbAuth){ resolve({ok:false, msg:'Firebase 초기화 안됨 — 페이지 새로고침 후 시도해 주세요'}); return; }
+  }
     fbAuth.signInWithEmailAndPassword(email, pw)
       .then(function(){ resolve({ok:true}); })
       .catch(function(e){
@@ -1027,7 +1031,7 @@ function fbSaveAll(){
   return new Promise(function(resolve){
     var user = fbAuth && fbAuth.currentUser;
     if(!fbDB || !user){ resolve(false); return; }
-    var custs = JSON.parse(localStorage.getItem('cust_v37')||'[]');
+    var custs = JSON.parse(localStorage.getItem('cust_v38')||'[]');
     var map = {};
     custs.forEach(function(cu){ map['c_'+cu.id] = cu; });
     fbDB.ref('jacaranda/customers').set(map)
@@ -1045,7 +1049,7 @@ function fbLoadAll(){
       .then(function(snap){
         if(!snap.exists()){ resolve(false); return; }
         var custs  = Object.values(snap.val()).filter(Boolean);
-        var local  = JSON.parse(localStorage.getItem('cust_v37')||'[]');
+        var local  = JSON.parse(localStorage.getItem('cust_v38')||'[]');
         var merged = local.slice();
         custs.forEach(function(nc){
           if(!nc||!nc.id) return;
@@ -1064,7 +1068,7 @@ function fbLoadAll(){
             merged.push(nc);
           }
         });
-        localStorage.setItem('cust_v37', JSON.stringify(merged));
+        localStorage.setItem('cust_v38', JSON.stringify(merged));
         console.log('[FB] 복원 완료:', merged.length, '명');
         resolve(true);
       })
@@ -1106,10 +1110,13 @@ function fbAdmLogout(){
 }
 
 // 페이지 로드 후 Firebase 초기화
+// DOM 준비되면 즉시 초기화 시도
+document.addEventListener('DOMContentLoaded', function(){
+  setTimeout(fbInit, 300);
+});
+// load 이벤트에서도 한번 더
 window.addEventListener('load', function(){
-  setTimeout(function(){
-    fbInit();
-  }, 500);
+  if(!fbAuth) setTimeout(fbInit, 500);
 });
 </script>
 </head>
@@ -1862,7 +1869,7 @@ function getCalliTxt(c1,c2,c3){
 /* ── 저장 & 내보내기 ── */
 function saveRec(p){
   try{
-    const arr=JSON.parse(localStorage.getItem('jaca_v37')||'[]');
+    const arr=JSON.parse(localStorage.getItem('jaca_v38')||'[]');
     const rec={
       id: Date.now(),
       date: new Date().toISOString(),
@@ -1889,7 +1896,7 @@ function saveRec(p){
     };
     // 기존 고객이면 visits에 추가, 신규면 생성
     const phone = p.phone.replace(/[^0-9]/g,'');
-    const custKey = 'cust_v37';
+    const custKey = 'cust_v38';
     const custs = JSON.parse(localStorage.getItem(custKey)||'[]');
     const existIdx = custs.findIndex(c=>c.phone.replace(/[^0-9]/g,'')=== phone && c.name===p.name);
     if(existIdx>=0){
@@ -1915,7 +1922,7 @@ function saveRec(p){
     // 기존 단순 레코드도 유지
     arr.unshift(rec);
     if(arr.length>500) arr.splice(500);
-    localStorage.setItem('jaca_v37',JSON.stringify(arr));
+    localStorage.setItem('jaca_v38',JSON.stringify(arr));
     // Firebase 동기화
     const savedCust = custs.find(cu => cu.phone && cu.phone.replace(/[^0-9]/g,'') === p.phone.replace(/[^0-9]/g,'') && cu.name === p.name);
     if(savedCust && fbSaveCust) fbSaveCust(savedCust);
@@ -3198,7 +3205,7 @@ function denyConsent(){
    관리자 모드 JS
 ══════════════════════════════════ */
 const ADM_PW_KEY = 'jaca_adm_pw';
-const CUST_KEY   = 'cust_v37';
+const CUST_KEY   = 'cust_v38';
 
 
 // ── 백업 / 복원 ──────────────────────────
@@ -3211,7 +3218,7 @@ function backupData(){
     + String(now.getMinutes()).padStart(2,'0');
 
   const payload = {
-    version: 'jaca_v37',
+    version: 'jaca_v38',
     exported_at: now.toISOString(),
     customers: JSON.parse(localStorage.getItem(CUST_KEY)||'[]'),
     settings: { adm_pw: localStorage.getItem(ADM_PW_KEY)||'1234' }
