@@ -972,6 +972,7 @@ body.print-content .rcard-ai{display:none!important}
     if(!firebase.apps.length) firebase.initializeApp(FB_CFG);
     db = firebase.database();
     console.log('[FB] 초기화 완료');
+    window._fbReady = true;
   } catch(e){ console.warn('[FB] 초기화 실패:', e.message); }
 
   const PATH = 'jacaranda/customers';
@@ -980,7 +981,7 @@ body.print-content .rcard-ai{display:none!important}
   window.fbSaveAll = async function(){
     if(!db) return false;
     try {
-      const custs = JSON.parse(localStorage.getItem('cust_v32')||'[]');
+      const custs = JSON.parse(localStorage.getItem('cust_v33')||'[]');
       const map = {};
       custs.forEach(cu => { map['c_'+cu.id] = cu; });
       await db.ref(PATH).set(map);
@@ -997,7 +998,7 @@ body.print-content .rcard-ai{display:none!important}
       if(!snap.exists()) return false;
       const map   = snap.val();
       const custs = Object.values(map).filter(Boolean);
-      const local = JSON.parse(localStorage.getItem('cust_v32')||'[]');
+      const local = JSON.parse(localStorage.getItem('cust_v33')||'[]');
       const merged = [...local];
       custs.forEach(nc => {
         if(!nc || !nc.id) return;
@@ -1016,7 +1017,7 @@ body.print-content .rcard-ai{display:none!important}
           merged.push(nc);
         }
       });
-      localStorage.setItem('cust_v32', JSON.stringify(merged));
+      localStorage.setItem('cust_v33', JSON.stringify(merged));
       console.log('[FB] 복원:', merged.length, '명');
       return true;
     } catch(e){ console.warn('[FB] 복원 실패:', e.message); return false; }
@@ -1796,7 +1797,7 @@ function getCalliTxt(c1,c2,c3){
 /* ── 저장 & 내보내기 ── */
 function saveRec(p){
   try{
-    const arr=JSON.parse(localStorage.getItem('jaca_v32')||'[]');
+    const arr=JSON.parse(localStorage.getItem('jaca_v33')||'[]');
     const rec={
       id: Date.now(),
       date: new Date().toISOString(),
@@ -1823,7 +1824,7 @@ function saveRec(p){
     };
     // 기존 고객이면 visits에 추가, 신규면 생성
     const phone = p.phone.replace(/[^0-9]/g,'');
-    const custKey = 'cust_v32';
+    const custKey = 'cust_v33';
     const custs = JSON.parse(localStorage.getItem(custKey)||'[]');
     const existIdx = custs.findIndex(c=>c.phone.replace(/[^0-9]/g,'')=== phone && c.name===p.name);
     if(existIdx>=0){
@@ -1849,7 +1850,7 @@ function saveRec(p){
     // 기존 단순 레코드도 유지
     arr.unshift(rec);
     if(arr.length>500) arr.splice(500);
-    localStorage.setItem('jaca_v32',JSON.stringify(arr));
+    localStorage.setItem('jaca_v33',JSON.stringify(arr));
     // Firebase 동기화
     const savedCust = custs.find(cu => cu.phone && cu.phone.replace(/[^0-9]/g,'') === p.phone.replace(/[^0-9]/g,'') && cu.name === p.name);
     if(savedCust && window.fbSaveCust) window.fbSaveCust(savedCust);
@@ -3132,7 +3133,7 @@ function denyConsent(){
    관리자 모드 JS
 ══════════════════════════════════ */
 const ADM_PW_KEY = 'jaca_adm_pw';
-const CUST_KEY   = 'cust_v32';
+const CUST_KEY   = 'cust_v33';
 
 
 // ── 백업 / 복원 ──────────────────────────
@@ -3145,7 +3146,7 @@ function backupData(){
     + String(now.getMinutes()).padStart(2,'0');
 
   const payload = {
-    version: 'jaca_v32',
+    version: 'jaca_v33',
     exported_at: now.toISOString(),
     customers: JSON.parse(localStorage.getItem(CUST_KEY)||'[]'),
     settings: { adm_pw: localStorage.getItem(ADM_PW_KEY)||'1234' }
@@ -3259,7 +3260,23 @@ async function fbLoginSubmit(){
   const errEl = document.getElementById('fb-login-err');
   if(!email||!pw){ errEl.textContent='이메일과 비밀번호를 입력해 주세요'; return; }
   errEl.textContent = '로그인 중...';
-  if(!window.fbSignIn){ errEl.textContent='Firebase 로딩 중입니다. 잠시 후 다시 시도해 주세요.'; return; }
+
+  // fbSignIn 로드 대기 (최대 8초)
+  if(!window.fbSignIn){
+    let waited = 0;
+    await new Promise(resolve => {
+      const t = setInterval(()=>{
+        waited += 200;
+        if(window.fbSignIn || waited >= 8000){
+          clearInterval(t); resolve();
+        }
+      }, 200);
+    });
+  }
+  if(!window.fbSignIn){
+    errEl.textContent = '❌ Firebase 연결 실패 — 인터넷 연결을 확인해 주세요';
+    return;
+  }
   const result = await window.fbSignIn(email, pw);
   if(result.ok){
     errEl.textContent = '';
