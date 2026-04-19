@@ -981,7 +981,7 @@ body.print-content .rcard-ai{display:none!important}
   window.fbSaveAll = async function(){
     if(!db) return false;
     try {
-      const custs = JSON.parse(localStorage.getItem('cust_v34')||'[]');
+      const custs = JSON.parse(localStorage.getItem('cust_v35')||'[]');
       const map = {};
       custs.forEach(cu => { map['c_'+cu.id] = cu; });
       await db.ref(PATH).set(map);
@@ -998,7 +998,7 @@ body.print-content .rcard-ai{display:none!important}
       if(!snap.exists()) return false;
       const map   = snap.val();
       const custs = Object.values(map).filter(Boolean);
-      const local = JSON.parse(localStorage.getItem('cust_v34')||'[]');
+      const local = JSON.parse(localStorage.getItem('cust_v35')||'[]');
       const merged = [...local];
       custs.forEach(nc => {
         if(!nc || !nc.id) return;
@@ -1017,7 +1017,7 @@ body.print-content .rcard-ai{display:none!important}
           merged.push(nc);
         }
       });
-      localStorage.setItem('cust_v34', JSON.stringify(merged));
+      localStorage.setItem('cust_v35', JSON.stringify(merged));
       console.log('[FB] 복원:', merged.length, '명');
       return true;
     } catch(e){ console.warn('[FB] 복원 실패:', e.message); return false; }
@@ -1797,7 +1797,7 @@ function getCalliTxt(c1,c2,c3){
 /* ── 저장 & 내보내기 ── */
 function saveRec(p){
   try{
-    const arr=JSON.parse(localStorage.getItem('jaca_v34')||'[]');
+    const arr=JSON.parse(localStorage.getItem('jaca_v35')||'[]');
     const rec={
       id: Date.now(),
       date: new Date().toISOString(),
@@ -1824,7 +1824,7 @@ function saveRec(p){
     };
     // 기존 고객이면 visits에 추가, 신규면 생성
     const phone = p.phone.replace(/[^0-9]/g,'');
-    const custKey = 'cust_v34';
+    const custKey = 'cust_v35';
     const custs = JSON.parse(localStorage.getItem(custKey)||'[]');
     const existIdx = custs.findIndex(c=>c.phone.replace(/[^0-9]/g,'')=== phone && c.name===p.name);
     if(existIdx>=0){
@@ -1850,7 +1850,7 @@ function saveRec(p){
     // 기존 단순 레코드도 유지
     arr.unshift(rec);
     if(arr.length>500) arr.splice(500);
-    localStorage.setItem('jaca_v34',JSON.stringify(arr));
+    localStorage.setItem('jaca_v35',JSON.stringify(arr));
     // Firebase 동기화
     const savedCust = custs.find(cu => cu.phone && cu.phone.replace(/[^0-9]/g,'') === p.phone.replace(/[^0-9]/g,'') && cu.name === p.name);
     if(savedCust && window.fbSaveCust) window.fbSaveCust(savedCust);
@@ -3133,7 +3133,7 @@ function denyConsent(){
    관리자 모드 JS
 ══════════════════════════════════ */
 const ADM_PW_KEY = 'jaca_adm_pw';
-const CUST_KEY   = 'cust_v34';
+const CUST_KEY   = 'cust_v35';
 
 
 // ── 백업 / 복원 ──────────────────────────
@@ -3146,7 +3146,7 @@ function backupData(){
     + String(now.getMinutes()).padStart(2,'0');
 
   const payload = {
-    version: 'jaca_v34',
+    version: 'jaca_v35',
     exported_at: now.toISOString(),
     customers: JSON.parse(localStorage.getItem(CUST_KEY)||'[]'),
     settings: { adm_pw: localStorage.getItem(ADM_PW_KEY)||'1234' }
@@ -3282,13 +3282,16 @@ async function fbLoginSubmit(){
     errEl.textContent = '';
     pinClose();
     enterAdmin();
-    toast('☁ ' + email + ' 로그인 완료');
-    // Firebase 동기화 실행
-    if(window.fbLoadAll) window.fbLoadAll().then(ok=>{
-      if(ok){ admSearch(); loadAdmStats(); }
-    });
+    toast('☁ 로그인 완료 — 동기화 중...');
+    // 인증 완료 후 1초 대기 후 동기화
+    setTimeout(function(){
+      if(window.fbLoadAll) window.fbLoadAll().then(ok=>{
+        if(ok){ admSearch(); loadAdmStats(); toast('☁ 동기화 완료'); }
+        else { toast('⚠ 동기화 실패 — 로컬 데이터 사용'); }
+      });
+    }, 1000);
   } else {
-    errEl.textContent = result.msg;
+    errEl.textContent = '❌ ' + result.msg;
   }
 }
 
